@@ -131,6 +131,7 @@ enum alg_id
     /* secret agreement */
     ALG_ID_DH,
     ALG_ID_ECDH_P256,
+    ALG_ID_ECDH_P384,
 
     /* signature */
     ALG_ID_RSA_SIGN,
@@ -213,6 +214,7 @@ struct key_funcs
     void     (CDECL *key_symmetric_destroy)( struct key * );
     NTSTATUS (CDECL *key_asymmetric_init)( struct key * );
     NTSTATUS (CDECL *key_asymmetric_generate)( struct key * );
+    NTSTATUS (CDECL *key_asymmetric_encrypt)( struct key *, UCHAR *, ULONG, UCHAR *, ULONG, ULONG *, void *, ULONG );
     NTSTATUS (CDECL *key_asymmetric_decrypt)( struct key *, UCHAR *, ULONG, UCHAR *, ULONG, ULONG * );
     NTSTATUS (CDECL *key_asymmetric_duplicate)( struct key *, struct key * );
     NTSTATUS (CDECL *key_asymmetric_sign)( struct key *, void *, UCHAR *, ULONG, UCHAR *, ULONG, ULONG *, ULONG );

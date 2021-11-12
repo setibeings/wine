@@ -76,6 +76,7 @@
 @ stdcall CloseClipboard()
 @ stdcall CloseDesktop(long)
 @ stdcall CloseTouchInputHandle(long)
+@ stdcall CloseGestureInfoHandle(long)
 @ stdcall CloseWindow(long)
 @ stdcall CloseWindowStation(long)
 @ stdcall CopyAcceleratorTableA(long ptr long)
@@ -304,6 +305,7 @@
 @ stdcall GetFocus()
 @ stdcall GetForegroundWindow()
 @ stdcall GetGestureConfig(long long long ptr ptr long)
+@ stdcall GetGestureExtraArgs(long long ptr)
 @ stdcall GetGestureInfo(long ptr)
 @ stdcall GetGUIThreadInfo(long ptr)
 @ stdcall GetGuiResources(long long)
@@ -834,5 +836,5 @@
 # All functions must be prefixed with '__wine_' (for internal functions)
 # or 'wine_' (for user-visible functions) to avoid namespace conflicts.
 #
-@ cdecl __wine_send_input(long ptr long)
+@ cdecl __wine_send_input(long ptr ptr)
 @ cdecl __wine_set_pixel_format(long long)

@@ -117,9 +117,9 @@ BOOL set_capture_window( HWND hwnd, UINT gui_flags, HWND *prev_ret )
  *
  * Internal SendInput function to allow the graphics driver to inject real events.
  */
-BOOL CDECL __wine_send_input( HWND hwnd, const INPUT *input, UINT flags )
+BOOL CDECL __wine_send_input( HWND hwnd, const INPUT *input, const RAWINPUT *rawinput )
 {
-    NTSTATUS status = send_hardware_message( hwnd, input, flags );
+    NTSTATUS status = send_hardware_message( hwnd, input, rawinput, 0 );
     if (status) SetLastError( RtlNtStatusToDosError(status) );
     return !status;
 }
@@ -137,17 +137,15 @@ static void update_mouse_coords( INPUT *input )
     if (input->u.mi.dwFlags & MOUSEEVENTF_ABSOLUTE)
     {
         DPI_AWARENESS_CONTEXT context = SetThreadDpiAwarenessContext( DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE );
+        RECT rc;
+
         if (input->u.mi.dwFlags & MOUSEEVENTF_VIRTUALDESK)
-        {
-            RECT rc = get_virtual_screen_rect();
-            input->u.mi.dx = rc.left + ((input->u.mi.dx * (rc.right - rc.left)) >> 16);
-            input->u.mi.dy = rc.top  + ((input->u.mi.dy * (rc.bottom - rc.top)) >> 16);
-        }
+            rc = get_virtual_screen_rect();
         else
-        {
-            input->u.mi.dx = (input->u.mi.dx * GetSystemMetrics( SM_CXSCREEN )) >> 16;
-            input->u.mi.dy = (input->u.mi.dy * GetSystemMetrics( SM_CYSCREEN )) >> 16;
-        }
+            rc = get_primary_screen_rect();
+
+        input->u.mi.dx = rc.left + ((input->u.mi.dx * (rc.right - rc.left)) >> 16);
+        input->u.mi.dy = rc.top  + ((input->u.mi.dy * (rc.bottom - rc.top)) >> 16);
         SetThreadDpiAwarenessContext( context );
     }
     else
@@ -178,18 +176,43 @@ static void update_mouse_coords( INPUT *input )
 UINT WINAPI SendInput( UINT count, LPINPUT inputs, int size )
 {
     UINT i;
-    NTSTATUS status;
+    NTSTATUS status = STATUS_SUCCESS;
+    RAWINPUT rawinput;
+
+    if (size != sizeof(INPUT))
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (!count)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return 0;
+    }
+
+    if (!inputs)
+    {
+        SetLastError( ERROR_NOACCESS );
+        return 0;
+    }
 
     for (i = 0; i < count; i++)
     {
-        if (inputs[i].type == INPUT_MOUSE)
+        INPUT input = inputs[i];
+        switch (input.type)
         {
+        case INPUT_MOUSE:
             /* we need to update the coordinates to what the server expects */
-            INPUT input = inputs[i];
             update_mouse_coords( &input );
-            status = send_hardware_message( 0, &input, SEND_HWMSG_INJECTED|SEND_HWMSG_RAWINPUT|SEND_HWMSG_WINDOW );
+            /* fallthrough */
+        case INPUT_KEYBOARD:
+            status = send_hardware_message( 0, &input, &rawinput, SEND_HWMSG_INJECTED );
+            break;
+        case INPUT_HARDWARE:
+            SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+            return 0;
         }
-        else status = send_hardware_message( 0, &inputs[i], SEND_HWMSG_INJECTED|SEND_HWMSG_RAWINPUT|SEND_HWMSG_WINDOW );
 
         if (status)
         {
@@ -1383,4 +1406,107 @@ BOOL WINAPI UnregisterDeviceNotification( HDEVNOTIFY handle )
     TRACE("%p\n", handle);
 
     return I_ScUnregisterDeviceNotification( handle );
+}
+
+/*****************************************************************************
+ * CloseTouchInputHandle (USER32.@)
+ */
+BOOL WINAPI CloseTouchInputHandle( HTOUCHINPUT handle )
+{
+    TRACE( "handle %p.\n", handle );
+    return TRUE;
+}
+
+/*****************************************************************************
+ * GetTouchInputInfo (USER32.@)
+ */
+BOOL WINAPI GetTouchInputInfo( HTOUCHINPUT handle, UINT count, TOUCHINPUT *ptr, int size )
+{
+    TRACE( "handle %p, count %u, ptr %p, size %u.\n", handle, count, ptr, size );
+    *ptr = *(TOUCHINPUT *)handle;
+    return TRUE;
+}
+
+/**********************************************************************
+ * IsTouchWindow (USER32.@)
+ */
+BOOL WINAPI IsTouchWindow( HWND hwnd, ULONG *flags )
+{
+    DWORD win_flags = win_set_flags( hwnd, 0, 0 );
+    TRACE( "hwnd %p, flags %p.\n", hwnd, flags );
+    return (win_flags & WIN_IS_TOUCH) != 0;
+}
+
+/*****************************************************************************
+ * RegisterTouchWindow (USER32.@)
+ */
+BOOL WINAPI RegisterTouchWindow( HWND hwnd, ULONG flags )
+{
+    DWORD win_flags = win_set_flags( hwnd, WIN_IS_TOUCH, 0 );
+    TRACE( "hwnd %p, flags %#x.\n", hwnd, flags );
+    return (win_flags & WIN_IS_TOUCH) == 0;
+}
+
+/*****************************************************************************
+ * UnregisterTouchWindow (USER32.@)
+ */
+BOOL WINAPI UnregisterTouchWindow( HWND hwnd )
+{
+    DWORD win_flags = win_set_flags( hwnd, 0, WIN_IS_TOUCH );
+    TRACE( "hwnd %p.\n", hwnd );
+    return (win_flags & WIN_IS_TOUCH) != 0;
+}
+
+/*****************************************************************************
+ * GetGestureInfo (USER32.@)
+ */
+BOOL WINAPI CloseGestureInfoHandle( HGESTUREINFO handle )
+{
+    FIXME( "handle %p stub!\n", handle );
+    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    return FALSE;
+}
+
+/*****************************************************************************
+ * GetGestureInfo (USER32.@)
+ */
+BOOL WINAPI GetGestureExtraArgs( HGESTUREINFO handle, UINT count, BYTE *args )
+{
+    FIXME( "handle %p, count %u, args %p stub!\n", handle, count, args );
+    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    return FALSE;
+}
+
+/*****************************************************************************
+ * GetGestureInfo (USER32.@)
+ */
+BOOL WINAPI GetGestureInfo( HGESTUREINFO handle, GESTUREINFO *ptr )
+{
+    FIXME( "handle %p, ptr %p stub!\n", handle, ptr );
+    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    return FALSE;
+}
+
+/*****************************************************************************
+ * GetGestureConfig (USER32.@)
+ */
+BOOL WINAPI GetGestureConfig( HWND hwnd, DWORD reserved, DWORD flags, UINT *count,
+                              GESTURECONFIG *config, UINT size )
+{
+    FIXME( "handle %p, reserved %#x, flags %#x, count %p, config %p, size %u stub!\n",
+           hwnd, reserved, flags, count, config, size );
+    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    return FALSE;
+}
+
+/**********************************************************************
+ * SetGestureConfig (USER32.@)
+ */
+BOOL WINAPI SetGestureConfig( HWND hwnd, DWORD reserved, UINT count,
+                              GESTURECONFIG *config, UINT size )
+{
+    FIXME( "handle %p, reserved %#x, count %u, config %p, size %u stub!\n",
+           hwnd, reserved, count, config, size );
+    SetLastError( ERROR_CALL_NOT_IMPLEMENTED );
+    return FALSE;
 }

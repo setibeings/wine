@@ -113,6 +113,7 @@ builtin_algorithms[] =
     {  BCRYPT_RSA_ALGORITHM,        BCRYPT_ASYMMETRIC_ENCRYPTION_INTERFACE, 0,      0,    0 },
     {  BCRYPT_DH_ALGORITHM,         BCRYPT_SECRET_AGREEMENT_INTERFACE,      0,      0,    0 },
     {  BCRYPT_ECDH_P256_ALGORITHM,  BCRYPT_SECRET_AGREEMENT_INTERFACE,      0,      0,    0 },
+    {  BCRYPT_ECDH_P384_ALGORITHM,  BCRYPT_SECRET_AGREEMENT_INTERFACE,      0,      0,    0 },
     {  BCRYPT_RSA_SIGN_ALGORITHM,   BCRYPT_SIGNATURE_INTERFACE,             0,      0,    0 },
     {  BCRYPT_ECDSA_P256_ALGORITHM, BCRYPT_SIGNATURE_INTERFACE,             0,      0,    0 },
     {  BCRYPT_ECDSA_P384_ALGORITHM, BCRYPT_SIGNATURE_INTERFACE,             0,      0,    0 },
@@ -573,7 +574,7 @@ static NTSTATUS get_rsa_property( enum mode_id mode, const WCHAR *prop, UCHAR *b
     {
         *ret_size = sizeof(ULONG);
         if (size < sizeof(ULONG)) return STATUS_BUFFER_TOO_SMALL;
-        if (buf) *(ULONG *)buf = BCRYPT_SUPPORTED_PAD_PKCS1_SIG;
+        if (buf) *(ULONG *)buf = BCRYPT_SUPPORTED_PAD_PKCS1_SIG | BCRYPT_SUPPORTED_PAD_OAEP;
         return STATUS_SUCCESS;
     }
 
@@ -1170,6 +1171,12 @@ static NTSTATUS key_symmetric_encrypt( struct key *key,  UCHAR *input, ULONG inp
     UCHAR *buf, *src, *dst;
     NTSTATUS status;
 
+    if (flags & ~BCRYPT_BLOCK_PADDING)
+    {
+        FIXME( "flags %08x not implemented\n", flags );
+        return STATUS_NOT_IMPLEMENTED;
+    }
+
     if (key->u.s.mode == MODE_ID_GCM)
     {
         BCRYPT_AUTHENTICATED_CIPHER_MODE_INFO *auth_info = padding;
@@ -1332,6 +1339,11 @@ static NTSTATUS key_import_pair( struct algorithm *alg, const WCHAR *type, BCRYP
         case ALG_ID_ECDH_P256:
             key_size = 32;
             magic = BCRYPT_ECDH_PUBLIC_P256_MAGIC;
+            break;
+
+        case ALG_ID_ECDH_P384:
+            key_size = 48;
+            magic = BCRYPT_ECDH_PUBLIC_P384_MAGIC;
             break;
 
         case ALG_ID_ECDSA_P256:
@@ -1821,21 +1833,16 @@ NTSTATUS WINAPI BCryptEncrypt( BCRYPT_KEY_HANDLE handle, UCHAR *input, ULONG inp
            output_len, ret_len, flags );
 
     if (!key || key->hdr.magic != MAGIC_KEY) return STATUS_INVALID_HANDLE;
-    if (!key_is_symmetric( key ))
+
+    if (key_is_symmetric( key ))
     {
-        FIXME( "encryption with asymmetric keys not yet supported\n" );
-        return STATUS_NOT_IMPLEMENTED;
-    }
-    if (flags & ~BCRYPT_BLOCK_PADDING)
-    {
-        FIXME( "flags %08x not implemented\n", flags );
-        return STATUS_NOT_IMPLEMENTED;
+        EnterCriticalSection( &key->u.s.cs );
+        ret = key_symmetric_encrypt( key, input, input_len, padding, iv, iv_len, output, output_len, ret_len, flags );
+        LeaveCriticalSection( &key->u.s.cs );
+        return ret;
     }
 
-    EnterCriticalSection( &key->u.s.cs );
-    ret = key_symmetric_encrypt( key, input, input_len, padding, iv, iv_len, output, output_len, ret_len, flags );
-    LeaveCriticalSection( &key->u.s.cs );
-    return ret;
+    return key_funcs->key_asymmetric_encrypt( key, input, input_len, output, output_len, ret_len, padding, flags );
 }
 
 NTSTATUS WINAPI BCryptDecrypt( BCRYPT_KEY_HANDLE handle, UCHAR *input, ULONG input_len, void *padding, UCHAR *iv,

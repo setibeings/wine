@@ -32,6 +32,9 @@
 #include <X11/Xresource.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
+#ifdef HAVE_X11_EXTENSIONS_XINPUT2_H
+#include <X11/extensions/XInput2.h>
+#endif
 
 #define BOOL X_BOOL
 #define BYTE X_BYTE
@@ -311,14 +314,6 @@ struct x11drv_escape_present_drawable
  * X11 USER driver
  */
 
-struct x11drv_valuator_data
-{
-    double min;
-    double max;
-    int number;
-    double accum;
-};
-
 struct x11drv_thread_data
 {
     Display *display;
@@ -335,11 +330,15 @@ struct x11drv_thread_data
     HWND     clip_hwnd;            /* message window stored in desktop while clipping is active */
     DWORD    clip_reset;           /* time when clipping was last reset */
     HKL      kbd_layout;           /* active keyboard layout */
+#ifdef HAVE_X11_EXTENSIONS_XINPUT2_H
     enum { xi_unavailable = -1, xi_unknown, xi_disabled, xi_enabled } xi2_state; /* XInput2 state */
-    struct x11drv_valuator_data x_rel_valuator;
-    struct x11drv_valuator_data y_rel_valuator;
+    XIValuatorClassInfo x_valuator;
+    XIValuatorClassInfo y_valuator;
     int      xi2_core_pointer;     /* XInput2 core pointer id */
     int      xi2_rawinput_only;
+    int      xi2_active_touches;
+    int      xi2_primary_touchid;
+#endif /* HAVE_X11_EXTENSIONS_XINPUT2_H */
 };
 
 extern struct x11drv_thread_data *x11drv_init_thread_data(void) DECLSPEC_HIDDEN;
@@ -689,6 +688,7 @@ extern BOOL is_window_rect_full_screen( const RECT *rect ) DECLSPEC_HIDDEN;
 extern BOOL is_window_rect_full_virtual_screen( const RECT *rect ) DECLSPEC_HIDDEN;
 extern POINT virtual_screen_to_root( INT x, INT y ) DECLSPEC_HIDDEN;
 extern POINT root_to_virtual_screen( INT x, INT y ) DECLSPEC_HIDDEN;
+extern RECT get_native_screen_rect(void) DECLSPEC_HIDDEN;
 extern RECT get_virtual_screen_rect(void) DECLSPEC_HIDDEN;
 extern RECT get_primary_monitor_rect(void) DECLSPEC_HIDDEN;
 extern RECT get_host_primary_monitor_rect(void) DECLSPEC_HIDDEN;
